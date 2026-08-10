@@ -58,29 +58,29 @@ _RIGHT_W = 340
 
 _OS = platform.system()  # "Windows" | "Darwin" | "Linux"
 
-
 class C:
-    BG        = "#00060a"
-    PANEL     = "#010d14"
-    PANEL2    = "#010f18"
-    BORDER    = "#0d3347"
-    BORDER_B  = "#1a5c7a"
-    BORDER_A  = "#0f4060"
-    PRI       = "#00d4ff"
-    PRI_DIM   = "#007a99"
-    PRI_GHO   = "#001f2e"
-    ACC       = "#ff6b00"
-    ACC2      = "#ffcc00"
-    GREEN     = "#00ff88"
-    GREEN_D   = "#00aa55"
-    RED       = "#ff3355"
-    MUTED_C   = "#ff3366"
-    TEXT      = "#8ffcff"
-    TEXT_DIM  = "#3a8a9a"
-    TEXT_MED  = "#5ab8cc"
-    WHITE     = "#d8f8ff"
-    DARK      = "#000d14"
-    BAR_BG    = "#011520"
+    # Paleta "Black Hat Cybersegurança"
+    BG        = "#050505"     # Quase preto, mais profundo
+    PANEL     = "#0a0a0a"     # Painel levemente mais claro
+    PANEL2    = "#101010"     
+    BORDER    = "#2e0000"     # Borda em tons de vermelho escuro/sangue
+    BORDER_B  = "#4a0000"     # Borda de destaque
+    BORDER_A  = "#330000"
+    PRI       = "#ff0000"     # Vermelho principal (Cyber/Hacker)
+    PRI_DIM   = "#8b0000"     # Vermelho escuro
+    PRI_GHO   = "#2a0000"     # Vermelho fantasma
+    ACC       = "#ff4500"     # Laranja neon para avisos
+    ACC2      = "#ff8c00"
+    GREEN     = "#00ff00"     # Verde hacker clássico
+    GREEN_D   = "#008000"
+    RED       = "#ff0000"
+    MUTED_C   = "#505050"
+    TEXT      = "#ff4444"     # Texto principal em vermelho
+    TEXT_DIM  = "#a0a0a0"
+    TEXT_MED  = "#d3d3d3"
+    WHITE     = "#ffffff"
+    DARK      = "#000000"
+    BAR_BG    = "#1a0000"
 
 
 # Ana renge (accent) bağlı anahtarlar — durum renkleri (ACC, GREEN, RED…) sabit kalır
