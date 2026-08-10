@@ -57,7 +57,7 @@ O motor proativo foi reconstruído para ser menos intrusivo e mais significativo
 ## ⚡ Quick Start
 
 ```bash
-git clone [https://github.com/Diegodevcyber/CyberCore.git](https://github.com/Diegodevcyber/CyberCore.git)
+git clone https://github.com/Diegodevcyber/CyberCore.git
 cd CyberCore
 pip install -r requirements.txt
 python main.py
