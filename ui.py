@@ -60,27 +60,27 @@ _OS = platform.system()  # "Windows" | "Darwin" | "Linux"
 
 
 class C:
-    BG        = "#00060a"
-    PANEL     = "#010d14"
-    PANEL2    = "#010f18"
-    BORDER    = "#0d3347"
-    BORDER_B  = "#1a5c7a"
-    BORDER_A  = "#0f4060"
-    PRI       = "#00d4ff"
-    PRI_DIM   = "#007a99"
-    PRI_GHO   = "#001f2e"
+    BG        = "#0a0100"
+    PANEL     = "#140201"
+    PANEL2    = "#180201"
+    BORDER    = "#470d0d"
+    BORDER_B  = "#7a1a1c"
+    BORDER_A  = "#60140f"
+    PRI       = "#ff002b"
+    PRI_DIM   = "#990015"
+    PRI_GHO   = "#2e0001"
     ACC       = "#ff6b00"
     ACC2      = "#ffcc00"
     GREEN     = "#00ff88"
     GREEN_D   = "#00aa55"
     RED       = "#ff3355"
     MUTED_C   = "#ff3366"
-    TEXT      = "#8ffcff"
-    TEXT_DIM  = "#3a8a9a"
-    TEXT_MED  = "#5ab8cc"
-    WHITE     = "#d8f8ff"
-    DARK      = "#000d14"
-    BAR_BG    = "#011520"
+    TEXT      = "#ff8fb2"
+    TEXT_DIM  = "#9a3a4a"
+    TEXT_MED  = "#cc5a6d"
+    WHITE     = "#ffd8de"
+    DARK      = "#140000"
+    BAR_BG    = "#200201"
 
 
 # Ana renge (accent) bağlı anahtarlar — durum renkleri (ACC, GREEN, RED…) sabit kalır
@@ -416,7 +416,7 @@ class HudCanvas(QWidget):
                 self._tgt_scale = random.uniform(0.998, 1.002)
                 self._tgt_halo  = random.uniform(15, 28)
             else:
-                self._tgt_scale = random.uniform(1.001, 1.008)
+                self._tgt_scale = random.uniform(0.975, 1.045)
                 self._tgt_halo  = random.uniform(48, 68)
             self._last_t = now
 
@@ -447,6 +447,15 @@ class HudCanvas(QWidget):
                 math.cos(ang) * random.uniform(0.9, 2.4),
                 math.sin(ang) * random.uniform(0.9, 2.4) - 0.4, 1.0,
             ])
+        elif (not self.muted) and random.random() < 0.02:
+            cx, cy = self.width() / 2, self.height() / 2
+            ang = random.uniform(0, 2 * math.pi)
+            r_s = fw * 0.28
+            self._particles.append([
+                cx + math.cos(ang) * r_s, cy + math.sin(ang) * r_s,
+                math.cos(ang) * random.uniform(0.3, 0.8),
+                math.sin(ang) * random.uniform(0.3, 0.8) - 0.15, 1.0,
+            ])
         self._particles = [
             [p[0]+p[2], p[1]+p[3], p[2]*0.97, p[3]*0.97, p[4]-0.028]
             for p in self._particles if p[4] > 0
@@ -473,10 +482,14 @@ class HudCanvas(QWidget):
         p.drawPixmap(0, 0, self._bin_bg)
 
         # ── low-poly wireframe head — face-landmark mesh, glowing nodes ──
-        HW, HH = fw * 0.27, fw * 0.32
+        HW, HH = fw * 0.27 * self._scale, fw * 0.32 * self._scale
+        sway = math.sin(self._tick * 0.015) * 0.045          # gentle side-to-side (~2.6°)
+        bob  = math.sin(self._tick * 0.021) * fw * 0.006      # gentle vertical drift
 
         def hp(nx, ny):
-            return QPointF(cx + nx * HW, cy + ny * HH)
+            rx = nx * math.cos(sway) - ny * math.sin(sway)
+            ry = nx * math.sin(sway) + ny * math.cos(sway)
+            return QPointF(cx + rx * HW, cy + bob + ry * HH)
 
         pts = {
             "crown": hp(0.00, -1.00), "crown_l": hp(-0.42, -0.94), "crown_r": hp(0.42, -0.94),
@@ -525,9 +538,11 @@ class HudCanvas(QWidget):
             ("neck_l", "shoulder_r"), ("neck_r", "shoulder_l"),
         ]
 
-        mesh_a = max(40, min(150, int(self._halo * 0.9)))
-        p.setPen(QPen(qcol(C.MUTED_C if self.muted else C.PRI, mesh_a), 1))
-        for a_pt, b_pt in edges:
+        mesh_base = max(40, min(150, int(self._halo * 0.9)))
+        mesh_col  = C.MUTED_C if self.muted else C.PRI
+        for idx, (a_pt, b_pt) in enumerate(edges):
+            shimmer = 0.55 + 0.45 * math.sin(self._tick * 0.045 - idx * 0.4)
+            p.setPen(QPen(qcol(mesh_col, int(mesh_base * shimmer)), 1))
             p.drawLine(pts[a_pt], pts[b_pt])
 
         # glowing landmark nodes — brighter cluster across forehead/eyes
@@ -3385,4 +3400,4 @@ class JarvisUI:
 
     def stop_speaking(self):
         if not self.muted:
-            self.set_state("LISTENING") 
+            self.set_state("LISTENING")
