@@ -362,12 +362,31 @@ class HudCanvas(QWidget):
         self._blink      = True
         self._blink_tick = 0
         self._particles: list[list[float]] = []
+        self._bin_bg: QPixmap | None = None
+        self._bin_bg_size: tuple[int, int] = (0, 0)
         self._face_px: QPixmap | None = None
         self._load_face(face_path)
 
         self._tmr = QTimer(self)
         self._tmr.timeout.connect(self._step)
         self._tmr.start(16)
+
+    def _build_bin_bg(self, W: int, H: int):
+        """Pre-render the binary-code background once (cached as a QPixmap —
+        redrawing hundreds of glyphs every frame would be too costly)."""
+        pm = QPixmap(W, H)
+        pm.fill(Qt.GlobalColor.transparent)
+        pp = QPainter(pm)
+        pp.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        pp.setFont(QFont("Courier New", 9))
+        pp.setPen(QPen(qcol(C.PRI_GHO), 1))
+        sx, sy = 20, 17
+        for gy in range(sy, H, sy):
+            for gx in range(4, W, sx):
+                pp.drawText(gx, gy, "1" if random.random() < 0.5 else "0")
+        pp.end()
+        self._bin_bg      = pm
+        self._bin_bg_size = (W, H)
 
     def _load_face(self, path: str):
         try:
@@ -448,84 +467,82 @@ class HudCanvas(QWidget):
         cx, cy = W / 2, H / 2
         fw = min(W, H)
 
-        # grid dots
-        p.setPen(QPen(qcol(C.PRI_GHO), 1))
-        for x in range(0, W, 48):
-            for y in range(0, H, 48):
-                p.drawPoint(x, y)
+        # binary-code background — cached bitmap, built once / on resize
+        if self._bin_bg is None or self._bin_bg_size != (W, H):
+            self._build_bin_bg(W, H)
+        p.drawPixmap(0, 0, self._bin_bg)
 
-        r_face = fw * 0.31
+        # ── low-poly wireframe head — face-landmark mesh, glowing nodes ──
+        HW, HH = fw * 0.27, fw * 0.32
 
-        # halo glow
-        for i in range(10):
-            r   = r_face * (1.8 - i * 0.08)
-            frc = 1.0 - i / 10
-            a   = max(0, min(255, int(self._halo * 0.085 * frc)))
-            col = qcol(C.MUTED_C if self.muted else C.PRI, a)
-            p.setPen(QPen(col, 1.5)); p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawEllipse(QRectF(cx - r, cy - r, r * 2, r * 2))
+        def hp(nx, ny):
+            return QPointF(cx + nx * HW, cy + ny * HH)
 
-        # pulse rings
-        for pr in self._pulses:
-            a   = max(0, int(230 * (1.0 - pr / (fw * 0.74))))
-            col = qcol(C.MUTED_C if self.muted else C.PRI, a)
-            p.setPen(QPen(col, 1.5)); p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawEllipse(QRectF(cx - pr, cy - pr, pr * 2, pr * 2))
+        pts = {
+            "crown": hp(0.00, -1.00), "crown_l": hp(-0.42, -0.94), "crown_r": hp(0.42, -0.94),
+            "fh_l": hp(-0.55, -0.72), "fh_r": hp(0.55, -0.72),
+            "temple_l": hp(-0.80, -0.55), "temple_r": hp(0.80, -0.55),
+            "brow_l": hp(-0.45, -0.30), "brow_c": hp(0.00, -0.38), "brow_r": hp(0.45, -0.30),
+            "eye_l": hp(-0.38, -0.12), "eye_r": hp(0.38, -0.12),
+            "cheek_l": hp(-0.85, 0.05), "cheek_r": hp(0.85, 0.05),
+            "bridge": hp(0.00, -0.05),
+            "nose_l": hp(-0.14, 0.20), "nose_r": hp(0.14, 0.20), "nose_tip": hp(0.00, 0.22),
+            "mouth_l": hp(-0.30, 0.42), "mouth_r": hp(0.30, 0.42),
+            "jaw_l": hp(-0.62, 0.55), "jaw_r": hp(0.62, 0.55),
+            "jline_l": hp(-0.40, 0.66), "jline_r": hp(0.40, 0.66),
+            "chin_l": hp(-0.20, 0.68), "chin_r": hp(0.20, 0.68), "chin": hp(0.00, 0.72),
+            "neck_l": hp(-0.28, 0.88), "neck_r": hp(0.28, 0.88),
+            "shoulder_l": hp(-0.62, 1.05), "shoulder_r": hp(0.62, 1.05),
+        }
 
-        # spinning arc rings
-        for idx, (r_frac, w_r, arc_l, gap) in enumerate(
-            [(0.48, 3, 115, 78), (0.40, 2, 78, 55), (0.32, 1, 56, 40)]
-        ):
-            ring_r = fw * r_frac
-            base   = self._rings[idx]
-            a_val  = max(0, min(255, int(self._halo * (1.0 - idx * 0.18))))
-            col    = qcol(C.MUTED_C if self.muted else C.PRI, a_val)
-            p.setPen(QPen(col, w_r)); p.setBrush(Qt.BrushStyle.NoBrush)
-            angle = base
-            rect  = QRectF(cx - ring_r, cy - ring_r, ring_r * 2, ring_r * 2)
-            while angle < base + 360:
-                p.drawArc(rect, int(angle * 16), int(arc_l * 16))
-                angle += arc_l + gap
+        edges = [
+            ("crown_l", "crown"), ("crown", "crown_r"),
+            ("crown_l", "fh_l"), ("crown_r", "fh_r"),
+            ("crown_l", "temple_l"), ("crown_r", "temple_r"),
+            ("fh_l", "temple_l"), ("fh_r", "temple_r"),
+            ("fh_l", "brow_l"), ("fh_r", "brow_r"),
+            ("fh_l", "brow_c"), ("fh_r", "brow_c"), ("brow_l", "brow_c"), ("brow_r", "brow_c"),
+            ("temple_l", "brow_l"), ("temple_r", "brow_r"),
+            ("temple_l", "eye_l"), ("temple_r", "eye_r"),
+            ("brow_l", "eye_l"), ("brow_r", "eye_r"),
+            ("brow_c", "bridge"), ("eye_l", "bridge"), ("eye_r", "bridge"),
+            ("temple_l", "cheek_l"), ("temple_r", "cheek_r"),
+            ("eye_l", "cheek_l"), ("eye_r", "cheek_r"),
+            ("bridge", "nose_tip"), ("nose_l", "nose_tip"), ("nose_r", "nose_tip"),
+            ("eye_l", "nose_l"), ("eye_r", "nose_r"),
+            ("cheek_l", "nose_l"), ("cheek_r", "nose_r"),
+            ("cheek_l", "mouth_l"), ("cheek_r", "mouth_r"),
+            ("nose_l", "mouth_l"), ("nose_r", "mouth_r"),
+            ("cheek_l", "jaw_l"), ("cheek_r", "jaw_r"),
+            ("mouth_l", "jaw_l"), ("mouth_r", "jaw_r"),
+            ("jaw_l", "jline_l"), ("jaw_r", "jline_r"),
+            ("mouth_l", "chin_l"), ("mouth_r", "chin_r"),
+            ("jline_l", "chin_l"), ("jline_r", "chin_r"),
+            ("chin_l", "chin"), ("chin_r", "chin"),
+            ("jline_l", "neck_l"), ("jline_r", "neck_r"),
+            ("neck_l", "neck_r"),
+            ("neck_l", "shoulder_l"), ("neck_r", "shoulder_r"),
+            ("neck_l", "shoulder_r"), ("neck_r", "shoulder_l"),
+        ]
 
-        # scanners
-        sr = fw * 0.50
-        sa = min(255, int(self._halo * 1.5))
-        ex = 75 if self.speaking else 44
-        p.setPen(QPen(qcol(C.MUTED_C if self.muted else C.PRI, sa), 2.5))
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        srect = QRectF(cx - sr, cy - sr, sr * 2, sr * 2)
-        p.drawArc(srect, int(self._scan * 16), int(ex * 16))
-        p.setPen(QPen(qcol(C.ACC, sa // 2), 1.5))
-        p.drawArc(srect, int(self._scan2 * 16), int(ex * 16))
+        mesh_a = max(40, min(150, int(self._halo * 0.9)))
+        p.setPen(QPen(qcol(C.MUTED_C if self.muted else C.PRI, mesh_a), 1))
+        for a_pt, b_pt in edges:
+            p.drawLine(pts[a_pt], pts[b_pt])
 
-        # tick marks
-        t_out, t_in = fw * 0.497, fw * 0.474
-        p.setPen(QPen(qcol(C.PRI, 140), 1))
-        for deg in range(0, 360, 10):
-            rad = math.radians(deg)
-            inn = t_in if deg % 30 == 0 else t_in + 6
-            p.drawLine(
-                QPointF(cx + t_out * math.cos(rad), cy - t_out * math.sin(rad)),
-                QPointF(cx + inn  * math.cos(rad), cy - inn  * math.sin(rad)),
-            )
-
-        # crosshair
-        ch_r, gap_h = fw * 0.51, fw * 0.16
-        p.setPen(QPen(qcol(C.PRI, int(self._halo * 0.5)), 1))
-        p.drawLine(QPointF(cx - ch_r, cy), QPointF(cx - gap_h, cy))
-        p.drawLine(QPointF(cx + gap_h, cy), QPointF(cx + ch_r, cy))
-        p.drawLine(QPointF(cx, cy - ch_r), QPointF(cx, cy - gap_h))
-        p.drawLine(QPointF(cx, cy + gap_h), QPointF(cx, cy + ch_r))
-
-        # corner brackets
-        bl = 24
-        bc = qcol(C.PRI, 210)
-        hl, hr = cx - fw // 2, cx + fw // 2
-        ht, hb = cy - fw // 2, cy + fw // 2
-        p.setPen(QPen(bc, 2))
-        for bx, by, dx, dy in [(hl,ht,1,1),(hr,ht,-1,1),(hl,hb,1,-1),(hr,hb,-1,-1)]:
-            p.drawLine(QPointF(bx, by), QPointF(bx + dx * bl, by))
-            p.drawLine(QPointF(bx, by), QPointF(bx, by + dy * bl))
+        # glowing landmark nodes — brighter cluster across forehead/eyes
+        node_glow   = {"crown", "crown_l", "crown_r", "fh_l", "fh_r", "brow_c", "temple_l", "temple_r"}
+        node_bright = {"eye_l", "eye_r"}
+        for name, pos in pts.items():
+            if name in node_bright:
+                rN, aN = 3.4, min(255, int(self._halo * 3.2))
+            elif name in node_glow:
+                rN, aN = 2.2, min(220, int(self._halo * 1.8))
+            else:
+                continue
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(qcol(C.MUTED_C if self.muted else C.PRI, aN)))
+            p.drawEllipse(pos, rN, rN)
 
         # face
         if self._face_px:
@@ -537,18 +554,53 @@ class HudCanvas(QWidget):
             )
             p.drawPixmap(int(cx - fsz / 2), int(cy - fsz / 2), scaled)
         else:
-            orb_r = int(fw * 0.27 * self._scale)
-            oc    = (200, 0, 50) if self.muted else (0, 60, 110)
-            for i in range(8, 0, -1):
-                r2  = int(orb_r * i / 8)
-                frc = i / 8
-                a   = max(0, min(255, int(self._halo * 1.1 * frc)))
-                p.setBrush(QBrush(QColor(int(oc[0]*frc), int(oc[1]*frc), int(oc[2]*frc), a)))
+            face_col = qcol(C.MUTED_C if self.muted else C.PRI)
+
+            # ── eyes — glowing visor slits over the wireframe eye nodes ──
+            eye_y  = pts["eye_l"].y()
+            eye_dx = HW * 0.38
+            eye_w  = fw * 0.075
+            blinking = (not self.muted) and (self._blink_tick < 3)
+            eye_h  = fw * (0.010 if blinking else 0.038)
+
+            for ex in (cx - eye_dx, cx + eye_dx):
+                rect = QRectF(ex - eye_w / 2, eye_y - eye_h / 2, eye_w, eye_h)
                 p.setPen(Qt.PenStyle.NoPen)
-                p.drawEllipse(QRectF(cx - r2, cy - r2, r2 * 2, r2 * 2))
+                p.setBrush(QBrush(face_col))
+                p.drawRoundedRect(rect, eye_h / 2, eye_h / 2)
+
+            # ── mouth — equaliser-style bars spanning the wireframe jaw ──
+            mouth_y = pts["mouth_l"].y() + fw * 0.02
+            mouth_w = pts["mouth_r"].x() - pts["mouth_l"].x()
+            n_bars  = 7
+            slot_w  = mouth_w / n_bars
+            bar_w   = slot_w * 0.6
+            max_amp = fw * 0.06
+
+            p.setPen(Qt.PenStyle.NoPen)
+            for i in range(n_bars):
+                t   = (i / (n_bars - 1)) - 0.5
+                env = max(0.15, 1.0 - (abs(t) * 1.7) ** 2)
+
+                if self.muted:
+                    amp, bcol = max_amp * 0.10, qcol(C.MUTED_C, 170)
+                elif self.speaking:
+                    amp  = max_amp * env * random.uniform(0.35, 1.0)
+                    bcol = qcol(C.PRI, 235)
+                else:
+                    idle = 0.5 + 0.5 * math.sin(self._tick * 0.06 + i * 0.8)
+                    amp, bcol = max_amp * env * 0.18 * idle, qcol(C.PRI_DIM, 175)
+
+                amp = max(3.0, amp)
+                bx  = pts["mouth_l"].x() + i * slot_w + (slot_w - bar_w) / 2
+                p.setBrush(QBrush(bcol))
+                p.drawRoundedRect(
+                    QRectF(bx, mouth_y - amp / 2, bar_w, amp), bar_w / 2, bar_w / 2
+                )
+
             p.setPen(QPen(qcol(C.PRI, min(255, int(self._halo * 2))), 1))
-            p.setFont(QFont("Courier New", 13, QFont.Weight.Bold))
-            p.drawText(QRectF(cx - 80, cy - 14, 160, 28),
+            p.setFont(QFont("Courier New", 12, QFont.Weight.Bold))
+            p.drawText(QRectF(cx - 80, cy + fw * 0.30, 160, 22),
                        Qt.AlignmentFlag.AlignCenter, self._assistant_name)
 
         # particles
@@ -739,7 +791,7 @@ class LogWidget(QTextEdit):
             QTimer.singleShot(20, self._next)
 
 _FILE_ICONS = {
-    "image":   ("🖼", "#00d4ff"), "video":   ("🎬", "#ff6b00"),
+    "image":   ("🖼", "#2dd4bf"), "video":   ("🎬", "#ff6b00"),
     "audio":   ("🎵", "#cc44ff"), "pdf":     ("📄", "#ff4444"),
     "word":    ("📝", "#4488ff"), "excel":   ("📊", "#44bb44"),
     "code":    ("💻", "#ffcc00"), "archive": ("📦", "#ff8844"),
@@ -863,7 +915,7 @@ class _DropCanvas(QWidget):
         pad  = 6
         rect = QRectF(pad, pad, W - pad * 2, H - pad * 2)
 
-        bg_col = qcol("#001a24" if z._drag_over else ("#001218" if z._hovering else C.PANEL))
+        bg_col = qcol("#240002" if z._drag_over else ("#180002" if z._hovering else C.PANEL))
         p.setBrush(QBrush(bg_col)); p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(rect, 6, 6)
 
@@ -894,7 +946,7 @@ class _DropCanvas(QWidget):
         p.drawText(QRectF(0, cy + 8, W, 16), Qt.AlignmentFlag.AlignCenter,
                    "Drop file here  or  Click to Browse")
         p.setFont(QFont("Courier New", 7))
-        p.setPen(QPen(qcol("#1a4a5a"), 1))
+        p.setPen(QPen(qcol("#5a1a20"), 1))
         p.drawText(QRectF(0, cy + 24, W, 14), Qt.AlignmentFlag.AlignCenter,
                    "Images · Video · Audio · PDF · Docs · Code · Data")
 
@@ -935,7 +987,7 @@ class _DropCanvas(QWidget):
                    f"{ext_str}  ·  {size_str}")
 
         p.setFont(QFont("Courier New", 6))
-        p.setPen(QPen(qcol("#1e5c6a"), 1))
+        p.setPen(QPen(qcol("#6a1e2a"), 1))
         par = str(path.parent)
         if len(par) > 42: par = "…" + par[-41:]
         p.drawText(QRectF(tx, H * 0.18 + 34, tw, 12),
@@ -1069,10 +1121,7 @@ class SetupOverlay(QWidget):
         self._key_input.setFixedHeight(32)
         self._key_input.setStyleSheet(f"""
             QLineEdit {{
-                background: #000d12; color: {C.TEXT};
-                border: 1px solid {C.BORDER}; border-radius: 3px; padding: 4px 8px;
-            }}
-            QLineEdit:focus {{ border: 1px solid {C.PRI}; }}
+                background: {C.DARK}; color: {C.TEXT};
         """)
         layout.addWidget(self._key_input)
         layout.addSpacing(12)
@@ -1119,7 +1168,7 @@ class SetupOverlay(QWidget):
 
     def _sel(self, key: str):
         self._sel_os = key
-        pal = {"windows":(C.PRI,"#001a22"),"mac":(C.ACC2,"#1a1400"),"linux":(C.GREEN,"#001a0d")}
+        pal = {"windows":(C.PRI,"#220004"),"mac":(C.ACC2,"#1a1400"),"linux":(C.GREEN,"#001a0d")}
         for k, btn in self._os_btns.items():
             if k == key:
                 fg, bg = pal[k]
@@ -1132,7 +1181,7 @@ class SetupOverlay(QWidget):
             else:
                 btn.setStyleSheet(f"""
                     QPushButton {{
-                        background: #000d12; color: {C.TEXT_DIM};
+                        background: {C.DARK}; color: {C.TEXT_DIM};
                         border: 1px solid {C.BORDER}; border-radius: 3px;
                     }}
                     QPushButton:hover {{ color: {C.TEXT}; border: 1px solid {C.BORDER_B}; }}
@@ -1217,7 +1266,7 @@ class HueWheel(QWidget):
         ang = self._hue * 2 * math.pi
         hx  = center.x() + r * math.cos(ang)
         hy  = center.y() - r * math.sin(ang)
-        p.setPen(QPen(QColor("#00060a"), 2))
+        p.setPen(QPen(QColor("#0a0100"), 2))
         p.setBrush(QBrush(QColor("#ffffff")))
         p.drawEllipse(QPointF(hx, hy), 7.5, 7.5)
 
@@ -1268,7 +1317,7 @@ class CustomizeOverlay(QWidget):
             w.setStyleSheet(f"color: {color}; background: transparent;")
             return w
 
-        _fs = (f"QLineEdit {{ background: #000d12; color: {C.TEXT}; "
+        _fs = (f"QLineEdit {{ background: {C.DARK}; color: {C.TEXT}; "
                f"border: 1px solid {C.BORDER}; border-radius: 3px; padding: 4px 8px; }}"
                f"QLineEdit:focus {{ border: 1px solid {C.PRI}; }}")
 
@@ -1328,7 +1377,7 @@ class CustomizeOverlay(QWidget):
         self._wheel.hue_committed.connect(self._on_wheel_commit)
 
         self._hex_input = QLineEdit(self._sel_color)
-        self._hex_input.setPlaceholderText("#00d4ff   (custom hex colour)")
+        self._hex_input.setPlaceholderText("#ff002b   (custom hex colour)")
         self._hex_input.setFont(QFont("Courier New", 10))
         self._hex_input.setFixedHeight(28)
         self._hex_input.setStyleSheet(_fs)
@@ -1791,7 +1840,7 @@ class MainWindow(QMainWindow):
 
         # Live camera container — replaces HUD when camera stream is active
         _cam_cont = QWidget()
-        _cam_cont.setStyleSheet("background: #000308;")
+        _cam_cont.setStyleSheet(f"background: {C.DARK};")
         _cam_v = QVBoxLayout(_cam_cont)
         _cam_v.setContentsMargins(0, 0, 0, 0)
         _cam_v.setSpacing(0)
@@ -1991,11 +2040,11 @@ class MainWindow(QMainWindow):
         except ImportError:
             return False
 
-        CYAN   = (0, 212, 255)
-        DIM    = (0, 100, 140)
-        DARK   = (0, 6, 10)
-        GLOW   = (0, 160, 200)
-        WHITE  = (220, 240, 255)
+        CYAN   = (255, 0, 43)
+        DIM    = (140, 0, 7)
+        DARK   = (10, 0, 1)
+        GLOW   = (200, 0, 28)
+        WHITE  = (255, 225, 230)
 
         def _render(sz: int) -> PIL.Image.Image:
             S  = sz * 4                     # draw at 4× then downscale
@@ -2627,7 +2676,7 @@ class MainWindow(QMainWindow):
         """Floating overlay panel shown when the ⚙ header button is toggled."""
         _BTN_STYLE_PRI = f"""
             QPushButton {{
-                background: #00091a; color: {C.PRI};
+                background: {C.PRI_GHO}; color: {C.PRI};
                 border: 1px solid {C.PRI_DIM}; border-radius: 3px;
                 text-align: left; padding: 0 8px;
             }}
@@ -2737,7 +2786,7 @@ class MainWindow(QMainWindow):
         self._input.setFixedHeight(30)
         self._input.setStyleSheet(f"""
             QLineEdit {{
-                background: #000d14; color: {C.WHITE};
+                background: {C.DARK}; color: {C.WHITE};
                 border: 1px solid {C.BORDER}; border-radius: 3px; padding: 3px 7px;
             }}
             QLineEdit:focus {{ border: 1px solid {C.PRI}; }}
@@ -3336,4 +3385,4 @@ class JarvisUI:
 
     def stop_speaking(self):
         if not self.muted:
-            self.set_state("LISTENING")
+            self.set_state("LISTENING") 
